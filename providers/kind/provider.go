@@ -19,7 +19,6 @@ package kind
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -40,13 +39,22 @@ import (
 
 var _ multicluster.Provider = &Provider{}
 
+// Options are the options for the kind cluster Provider.
+type Options struct {
+	// ClusterOptions are the options passed to the cluster constructor.
+	ClusterOptions []cluster.Option
+}
+
 // New creates a new kind cluster Provider.
-func New() *Provider {
-	return &Provider{
+func New(opts Options) *Provider {
+	p := &Provider{
+		opts:      opts,
 		log:       log.Log.WithName("kind-cluster-provider"),
 		clusters:  map[string]cluster.Cluster{},
 		cancelFns: map[string]context.CancelFunc{},
 	}
+
+	return p
 }
 
 type index struct {
@@ -57,7 +65,7 @@ type index struct {
 
 // Provider is a cluster Provider that works with a local Kind instance.
 type Provider struct {
-	opts      []cluster.Option
+	opts      Options
 	log       logr.Logger
 	lock      sync.RWMutex
 	clusters  map[string]cluster.Cluster
@@ -98,10 +106,6 @@ func (p *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 		for _, clusterName := range list {
 			log := p.log.WithValues("cluster", clusterName)
 
-			// skip?
-			if !strings.HasPrefix(clusterName, "fleet-") {
-				continue
-			}
 			p.lock.RLock()
 			if _, ok := p.clusters[clusterName]; ok {
 				p.lock.RUnlock()
@@ -120,7 +124,7 @@ func (p *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 				p.log.Info("failed to create rest config", "error", err)
 				return false, nil // keep going
 			}
-			cl, err := cluster.New(cfg, p.opts...)
+			cl, err := cluster.New(cfg, p.opts.ClusterOptions...)
 			if err != nil {
 				p.log.Info("failed to create cluster", "error", err)
 				return false, nil // keep going
